@@ -52,7 +52,9 @@ start() {
   } >$dir/.zshrc
   zpty -d 2>/dev/null || :
   output=
-  zpty s "env -u HISTFILE ZDOTDIR=${(q)dir} TERM=xterm zsh -i"
+  # Skip /etc/zsh/zshrc and the like; on Ubuntu it runs compinit, which
+  # can stop at a prompt about insecure directories.
+  zpty s "env -u HISTFILE ZDOTDIR=${(q)dir} TERM=xterm zsh -o no_global_rcs -i"
   shell=$dir
   wait_lines $dir/prompts 1
 }
