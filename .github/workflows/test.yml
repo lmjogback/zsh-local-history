@@ -1,0 +1,30 @@
+name: test
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - macos-latest
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Zsh
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y zsh
+      - name: Fetch zsh-history-substring-search
+        run: git clone --depth 1 https://github.com/zsh-users/zsh-history-substring-search "$RUNNER_TEMP/hss"
+      - name: Check syntax
+        run: |
+          zsh -n zsh-local-history.plugin.zsh
+          zsh -n tests/local-history.zsh
+      - name: Run tests
+        env:
+          HSS_PLUGIN: ${{ runner.temp }}/hss/zsh-history-substring-search.zsh
+        run: ./tests/run.sh
