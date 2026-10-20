@@ -73,6 +73,11 @@ Shortcuts → Mission Control, or the terminal never receives the keys.
 If zsh-history-substring-search is not loaded, the local widgets show a
 message and do nothing.
 
+With [zsh-autosuggestions](https://github.com/zsh-users/zsh-autosuggestions),
+the local widgets clear the suggestion like zsh-history-substring-search's
+own widgets do: the plugin adds them to `ZSH_AUTOSUGGEST_CLEAR_WIDGETS`,
+whether zsh-autosuggestions is loaded before or after it.
+
 ## How it works
 
 zsh-history-substring-search finds matches in the `$history` parameter,
@@ -104,8 +109,12 @@ the local widgets may stop working; the tests run against its current
 ## Tests
 
 ```sh
-HSS_PLUGIN=/path/to/zsh-history-substring-search.zsh ./tests/run.sh
+HSS_PLUGIN=/path/to/zsh-history-substring-search.zsh \
+ZSA_PLUGIN=/path/to/zsh-autosuggestions.zsh ./tests/run.sh
 ```
+
+`ZSA_PLUGIN` is optional; without it, the zsh-autosuggestions tests are
+skipped.
 
 The tests drive interactive shells in a pseudo-terminal (`zsh/zpty`), with a
 temporary history file that the test appends to as another shell would.
