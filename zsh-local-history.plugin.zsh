@@ -20,6 +20,7 @@ _local_history_precmd() {
   # History read at startup is local; nothing has been imported yet.
   if (( _local_history_checked < 0 )); then
     _local_history_checked=HISTCMD-1
+    _local_history_autosuggest
     return
   fi
   # Start at the last classified number: with HIST_IGNORE_SPACE, the next
@@ -86,6 +87,21 @@ local-history-substring-search-up()   { _local_history_widget history-substring-
 local-history-substring-search-down() { _local_history_widget history-substring-search-down "$@" }
 zle -N local-history-substring-search-up
 zle -N local-history-substring-search-down
+
+# zsh-autosuggestions clears its suggestion after the history-substring-search
+# widgets, but treats unknown widgets as edits and suggests a continuation of
+# the recalled line. It binds its widgets at the first prompt and defines
+# ZSH_AUTOSUGGEST_CLEAR_WIDGETS, with its defaults, only if it is unset, so
+# the local widgets are added when it is loaded: now, or at the first prompt
+# if it is loaded after this plugin (this hook runs before its own).
+_local_history_autosuggest() {
+  (( $+ZSH_AUTOSUGGEST_CLEAR_WIDGETS )) || return 0
+  local w
+  for w in local-history-substring-search-{up,down}; do
+    (( $ZSH_AUTOSUGGEST_CLEAR_WIDGETS[(Ie)$w] )) || ZSH_AUTOSUGGEST_CLEAR_WIDGETS+=($w)
+  done
+}
+_local_history_autosuggest
 
 # Without history-substring-search yet, the first widget call installs it.
 _local_history_wrap || :

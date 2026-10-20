@@ -13,16 +13,18 @@ if [[ ! -r $hss ]]; then
   print -u2 -- 'Set HSS_PLUGIN to the path of zsh-history-substring-search.zsh.'
   exit 2
 fi
+# Optional: zsh-autosuggestions.zsh, for the tests that load it.
+zsa=${ZSA_PLUGIN:-}
 plugin=${0:A:h:h}/zsh-local-history.plugin.zsh
 
 tmp=$(mktemp -d)
 trap 'zpty -d 2>/dev/null; rm -rf -- $tmp' EXIT
 
 typeset -gi tests=0 failed=0
-typeset -g output
+typeset -g output suggestion
 
 # Start a shell in a directory named $1. $2 lists what its .zshrc sources,
-# in order: plugin, hss or both, separated by commas.
+# in order: plugin, hss and zsa, separated by commas.
 start() {
   local dir=$tmp/$1 f
   mkdir -p $dir
@@ -38,13 +40,17 @@ start() {
       case $f in
         plugin) print -r -- "source ${(q)plugin}" ;;
         hss)    print -r -- "source ${(q)hss}" ;;
+        # Synchronous, so a suggestion is in place when the buffer is dumped.
+        zsa)    print -r -- "source ${(q)zsa}; unset ZSH_AUTOSUGGEST_USE_ASYNC" ;;
       esac
     done
     # After the plugin's hook, so a prompt means classification is done.
     print -r -- "_test_prompt() { print p >>${(q)dir}/prompts }"
     print -r -- 'precmd_functions+=(_test_prompt)'
-    print -r -- "_test_dump() { print -r -- \"|\$BUFFER\" >>${(q)dir}/buffers }"
+    print -r -- "_test_dump() { print -r -- \"|\$BUFFER|\$POSTDISPLAY\" >>${(q)dir}/buffers }"
     print -r -- 'zle -N _test_dump; bindkey "^Xp" _test_dump'
+    # zsh-autosuggestions would clear the suggestion before the dump.
+    print -r -- 'ZSH_AUTOSUGGEST_IGNORE_WIDGETS+=(_test_dump)'
     print -r -- 'bindkey "^Xu" local-history-substring-search-up'
     print -r -- 'bindkey "^Xd" local-history-substring-search-down'
     print -r -- 'bindkey "^XU" history-substring-search-up'
@@ -97,13 +103,15 @@ foreign() {
   print -r -- ": $EPOCHSECONDS:0;$1" >>$shell/history
 }
 
-# Send keys, then return the buffer in REPLY.
+# Send keys, then return the buffer in REPLY and the suggestion after it in
+# $suggestion. The tests' buffers contain no |.
 keys() {
   count $shell/buffers
   zpty -w -n s "$1"$'\C-Xp'
   wait_lines $shell/buffers $(( REPLY + 1 ))
   local -a lines=( ${(f)"$(<$shell/buffers)"} )
-  REPLY=${lines[-1]#\|}
+  local -a fields=( "${(@s:|:)lines[-1]}" )
+  REPLY=$fields[2] suggestion=$fields[3]
 }
 
 check() {
@@ -192,6 +200,58 @@ drain
 if [[ $REPLY != alpha || $output != *'zsh-history-substring-search is not loaded'* ]]; then
   print -u2 -- "FAIL: missing history-substring-search is reported (buffer ${(qq)REPLY})"
   (( ++failed ))
+fi
+
+# Wait until the shell has redrawn the line after input: until it has
+# written something and then nothing for a while.
+settle() {
+  local chunk
+  local -F deadline=$(( EPOCHREALTIME + 5 )) quiet=0
+  while (( EPOCHREALTIME < deadline && (quiet == 0 || EPOCHREALTIME < quiet) )); do
+    if zpty -rt s chunk 2>/dev/null; then
+      output+=$chunk
+      quiet=$(( EPOCHREALTIME + 0.2 ))
+    else
+      sleep 0.02
+    fi
+  done
+}
+
+# zsh-autosuggestions clears its suggestion after a local search, as it does
+# after history-substring-search, whether it is loaded before or after. It
+# does not suggest while more input is pending, so each argument after the
+# expected buffer and suggestion is sent on its own, as if typed.
+check_suggestion() {
+  local name=$1 expected=$2 expected_suggestion=$3 chunk
+  for chunk in "${@:4}"; do
+    zpty -w -n s "$chunk"
+    settle
+  done
+  keys ''
+  (( ++tests ))
+  if [[ $REPLY != $expected || $suggestion != $expected_suggestion ]]; then
+    print -u2 -- "FAIL: $name: expected ${(qq)expected} + ${(qq)expected_suggestion}," \
+      "got ${(qq)REPLY} + ${(qq)suggestion}"
+    (( ++failed ))
+  fi
+}
+
+if [[ -r $zsa ]]; then
+  for order in zsa,hss,plugin hss,plugin,zsa; do
+    start ${order//,/-} $order
+    run 'echo status'
+    run 'echo status --short'
+    new_line
+    check_suggestion "$order: suggestion while typing" 'echo st' 'atus --short' 'echo st'
+    new_line
+    check_suggestion "$order: no suggestion after local search" 'echo status' '' \
+      'echo st' $up $up
+    new_line
+    check_suggestion "$order: no suggestion after global search" 'echo status' '' \
+      'echo st' $gup $gup
+  done
+else
+  print -u2 -- 'Skipping zsh-autosuggestions tests: ZSA_PLUGIN is not set.'
 fi
 
 print -- "$tests tests, $failed failed"
