@@ -202,6 +202,21 @@ if [[ $REPLY != alpha || $output != *'zsh-history-substring-search is not loaded
   (( ++failed ))
 fi
 
+# Wait until the shell has redrawn the line after input: until it has
+# written something and then nothing for a while.
+settle() {
+  local chunk
+  local -F deadline=$(( EPOCHREALTIME + 5 )) quiet=0
+  while (( EPOCHREALTIME < deadline && (quiet == 0 || EPOCHREALTIME < quiet) )); do
+    if zpty -rt s chunk 2>/dev/null; then
+      output+=$chunk
+      quiet=$(( EPOCHREALTIME + 0.2 ))
+    else
+      sleep 0.02
+    fi
+  done
+}
+
 # zsh-autosuggestions clears its suggestion after a local search, as it does
 # after history-substring-search, whether it is loaded before or after. It
 # does not suggest while more input is pending, so each argument after the
@@ -210,7 +225,7 @@ check_suggestion() {
   local name=$1 expected=$2 expected_suggestion=$3 chunk
   for chunk in "${@:4}"; do
     zpty -w -n s "$chunk"
-    sleep 0.2
+    settle
   done
   keys ''
   (( ++tests ))
